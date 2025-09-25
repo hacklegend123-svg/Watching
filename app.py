@@ -9,7 +9,7 @@ import sqlite3
 conn = sqlite3.connect("jobs.db", check_same_thread=False)
 c = conn.cursor()
 
-# Users table with role
+# Users table (for login)
 c.execute('''
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,126 +23,126 @@ c.execute('''
 c.execute('''
     CREATE TABLE IF NOT EXISTS jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        poster_email TEXT,
         title TEXT,
         company TEXT,
         location TEXT,
-        description TEXT,
-        poster_email TEXT
+        description TEXT
     )
 ''')
 conn.commit()
 
 # ==============================
-# Functions
+# Helper Functions
 # ==============================
 def register_user(email, password, role):
-    try:
+    c.execute("SELECT * FROM users WHERE email=?", (email,))
+    if c.fetchone():
+        return False  # User already exists
+    else:
         c.execute("INSERT INTO users (email, password, role) VALUES (?, ?, ?)", (email, password, role))
         conn.commit()
         return True
-    except:
-        return False
 
-def login_user(email, password):
-    c.execute("SELECT * FROM users WHERE email=? AND password=?", (email, password))
+def login_user(email, password, role):
+    c.execute("SELECT * FROM users WHERE email=? AND password=? AND role=?", (email, password, role))
     return c.fetchone()
 
-def add_job(title, company, location, description, poster_email):
-    c.execute("INSERT INTO jobs (title, company, location, description, poster_email) VALUES (?, ?, ?, ?, ?)", 
-              (title, company, location, description, poster_email))
+def add_job(poster_email, title, company, location, description):
+    c.execute("INSERT INTO jobs (poster_email, title, company, location, description) VALUES (?, ?, ?, ?, ?)", 
+              (poster_email, title, company, location, description))
     conn.commit()
 
 def get_all_jobs():
     c.execute("SELECT * FROM jobs")
     return c.fetchall()
 
-def get_jobs_by_user(email):
-    c.execute("SELECT * FROM jobs WHERE poster_email=?", (email,))
+def get_user_jobs(poster_email):
+    c.execute("SELECT * FROM jobs WHERE poster_email=?", (poster_email,))
     return c.fetchall()
 
-def delete_job(job_id, email):
-    c.execute("DELETE FROM jobs WHERE id=? AND poster_email=?", (job_id, email))
+def delete_job(job_id, poster_email):
+    c.execute("DELETE FROM jobs WHERE id=? AND poster_email=?", (job_id, poster_email))
     conn.commit()
 
 # ==============================
 # Streamlit UI
 # ==============================
-st.title("🎯 Job Portal App")
+st.title("Job Portal App 👩‍💻👨‍💼")
 
-# Session state for login
+menu = ["Login", "Register"]
+choice = st.sidebar.selectbox("Menu", menu)
+
+# Track session
 if "user" not in st.session_state:
-    st.session_state.user = None
-    st.session_state.role = None
+    st.session_state["user"] = None
 
 # ------------------------------
-# If not logged in → show register/login
+# Registration
 # ------------------------------
-if not st.session_state.user:
-    menu = ["Login", "Register"]
-    choice = st.sidebar.selectbox("Menu", menu)
+if choice == "Register":
+    st.subheader("Create a New Account")
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    role = st.radio("Role", ["Job Seeker", "Job Poster"])
 
-    if choice == "Register":
-        st.subheader("Create a New Account")
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        role = st.selectbox("Role", ["seeker", "poster"])
-        if st.button("Register"):
-            if email and password:
-                if register_user(email, password, role):
-                    st.success("✅ Registration successful! Please login.")
-                else:
-                    st.error("⚠️ Email already registered.")
+    if st.button("Register"):
+        if email and password:
+            if register_user(email, password, role):
+                st.success("✅ Registration successful! Please login.")
             else:
-                st.error("⚠️ Please fill all fields.")
-
-    elif choice == "Login":
-        st.subheader("Login to Your Account")
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        if st.button("Login"):
-            user = login_user(email, password)
-            if user:
-                st.session_state.user = user[1]   # email
-                st.session_state.role = user[3]   # role
-                st.success(f"✅ Logged in as {user[1]} ({user[3]})")
-                st.experimental_rerun()
-            else:
-                st.error("⚠️ Invalid credentials.")
+                st.error("⚠️ Email already registered. Please login instead.")
+        else:
+            st.error("⚠️ Please fill in all fields.")
 
 # ------------------------------
-# If logged in → role-specific dashboard
+# Login
 # ------------------------------
-else:
-    st.sidebar.write(f"👤 Logged in as: {st.session_state.user} ({st.session_state.role})")
+elif choice == "Login":
+    st.subheader("Login to Your Account")
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    role = st.radio("Role", ["Job Seeker", "Job Poster"])
+
+    if st.button("Login"):
+        user = login_user(email, password, role)
+        if user:
+            st.session_state["user"] = {"email": email, "role": role}
+            st.success(f"✅ Logged in as {role}")
+        else:
+            st.error("❌ Invalid credentials or role mismatch")
+
+# ------------------------------
+# Logged-in Area
+# ------------------------------
+if st.session_state["user"]:
+    role = st.session_state["user"]["role"]
+    email = st.session_state["user"]["email"]
+
+    st.sidebar.write(f"👤 Logged in as {email} ({role})")
     if st.sidebar.button("Logout"):
-        st.session_state.user = None
-        st.session_state.role = None
-        st.experimental_rerun()
+        st.session_state["user"] = None
+        st.rerun()
 
-    # =======================
-    # Job Seeker Dashboard
-    # =======================
-    if st.session_state.role == "seeker":
-        st.header("🔎 Browse Available Jobs")
+    # If Job Seeker
+    if role == "Job Seeker":
+        st.subheader("Browse Available Jobs")
         jobs = get_all_jobs()
         if jobs:
             for job in jobs:
                 st.markdown(f"""
-                ### {job[1]}  
-                **Company:** {job[2]}  
-                **Location:** {job[3]}  
-                **Description:** {job[4]}  
-                **Posted by:** {job[5]}  
+                ### {job[2]}  
+                **Company:** {job[3]}  
+                **Location:** {job[4]}  
+                **Description:** {job[5]}  
                 """)
                 st.write("---")
         else:
             st.info("No jobs available right now. Please check back later!")
 
-    # =======================
-    # Job Poster Dashboard
-    # =======================
-    elif st.session_state.role == "poster":
-        st.header("📢 Post a New Job")
+    # If Job Poster
+    elif role == "Job Poster":
+        st.subheader("Post a New Job")
 
         job_title = st.text_input("Job Title")
         job_company = st.text_input("Company Name")
@@ -151,25 +151,25 @@ else:
 
         if st.button("Post Job"):
             if job_title and job_company and job_location and job_description:
-                add_job(job_title, job_company, job_location, job_description, st.session_state.user)
+                add_job(email, job_title, job_company, job_location, job_description)
                 st.success("✅ Job posted successfully!")
-                st.experimental_rerun()
             else:
                 st.error("⚠️ Please fill in all fields before posting.")
 
-        st.subheader("🗂 Your Posted Jobs")
-        user_jobs = get_jobs_by_user(st.session_state.user)
-        if user_jobs:
-            for job in user_jobs:
+        st.subheader("Your Posted Jobs")
+        my_jobs = get_user_jobs(email)
+        if my_jobs:
+            for job in my_jobs:
                 st.markdown(f"""
-                ### {job[1]}  
-                **Company:** {job[2]}  
-                **Location:** {job[3]}  
-                **Description:** {job[4]}  
+                ### {job[2]}  
+                **Company:** {job[3]}  
+                **Location:** {job[4]}  
+                **Description:** {job[5]}  
                 """)
-                if st.button(f"❌ Delete {job[1]}", key=f"delete_{job[0]}"):
-                    delete_job(job[0], st.session_state.user)
-                    st.success(f"✅ Deleted job: {job[1]}")
-                    st.experimental_rerun()
+                if st.button(f"Delete Job {job[0]}", key=f"delete_{job[0]}"):
+                    delete_job(job[0], email)
+                    st.success("🗑️ Job deleted successfully!")
+                    st.rerun()
+                st.write("---")
         else:
             st.info("You haven't posted any jobs yet.")
