@@ -9,9 +9,10 @@ import sqlite3
 conn = sqlite3.connect("jobs.db", check_same_thread=False)
 c = conn.cursor()
 
-# Users table (for login)
+# Reset and create fresh tables every time (safe for prototype)
+c.execute("DROP TABLE IF EXISTS users")
 c.execute('''
-    CREATE TABLE IF NOT EXISTS users (
+    CREATE TABLE users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE,
         password TEXT,
@@ -19,9 +20,9 @@ c.execute('''
     )
 ''')
 
-# Jobs table
+c.execute("DROP TABLE IF EXISTS jobs")
 c.execute('''
-    CREATE TABLE IF NOT EXISTS jobs (
+    CREATE TABLE jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         poster_email TEXT,
         title TEXT,
